@@ -245,6 +245,10 @@ textarea{resize:vertical;min-height:44px;overflow:hidden}
 .welcome .w-code input:focus{outline:2px solid var(--green);outline-offset:1px;border-color:var(--green)}
 .welcome .w-err{width:100%;font-size:14px;color:var(--danger);background:#fbeceb;border-radius:8px;padding:6px 10px}
 .welcome .w-err[hidden],.welcome .w-code[hidden]{display:none}
+.welcome .w-who{font-size:14px;color:#3d4a42;background:var(--green-soft);border-radius:8px;padding:6px 10px;width:100%;overflow-wrap:anywhere}
+.welcome .w-who[hidden],.welcome .w-alt[hidden]{display:none}
+.welcome .w-go:disabled{opacity:.6;cursor:default}
+.welcome .w-alt{background:none;border:0;color:var(--green);text-decoration:underline;font-size:14px;cursor:pointer;padding:2px}
 .welcome .w-copy{font-size:12px;color:#7a837c;margin-top:2px}
 @media print{.welcome{display:none !important}}
 @page{size:A4;margin:13mm 14mm}
@@ -300,52 +304,76 @@ textarea{resize:vertical;min-height:44px;overflow:hidden}
       <li><span class="w-ic">2</span><span><b>מעלים בדיקות מעבדה</b>קובץ PDF של תוצאות הופך לטבלה מסודרת.</span></li>
       <li><span class="w-ic">3</span><span><b>מפיקים מסמך PDF</b>מסמך מעוצב, מוכן להדפסה או לשליחה.</span></li>
     </ul>
-    <label class="w-code" id="wCodeBox" for="wCode"><span>קוד כניסה אישי</span><input id="wCode" type="text" autocomplete="off" autocapitalize="characters" spellcheck="false" maxlength="20" enterkeyhint="go"></label>
-    <div class="w-err" id="wErr" role="alert" hidden>הקוד לא נכון. בדקו שהעתקתם אותו בדיוק, או פנו למי שנתן לכם את הקישור.</div>
-    <button type="button" class="w-go" id="wGo">כניסה לכלי</button>
+    <div class="w-who" id="wWho" hidden></div>
+    <div class="w-err" id="wErr" role="alert" hidden></div>
+    <button type="button" class="w-go" id="wGo" disabled>טוען…</button>
+    <button type="button" class="w-alt" id="wSwitch" hidden>החלפת משתמש</button>
     <p class="w-priv">🔒 המידע נשמר רק במכשיר שלכם ולא נשלח לשום מקום.</p>
     <div class="w-copy">כל הזכויות שמורות לגולן גבריאל פניכל</div>
   </div>
 </div>
+<script src="https://cdn.jsdelivr.net/npm/firebase@10.12.2/firebase-app-compat.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/firebase@10.12.2/firebase-auth-compat.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/firebase@10.12.2/firebase-firestore-compat.js"></script>
 <script>
 (function(){
-  var w = document.getElementById("welcome");
-  // Personal access codes, stored only as SHA-256 hashes of "case-tool:" + CODE.
-  // A gate for who may use the tool, not real security: the page is public and holds no patient data.
-  var CODES = {
-    "fc1372cf0df56519efd517a60958392f321d7a0f75d3dce82c4de6c4b7513278": "גולן",
-    "222a2beceec0f9ee750240c79e92eb1d872f3b0623d124b368d535b22054c9c5": "סיוון",
-    "94ca5b98ed41a876585f5448e26c25dd4229e669a3dc9d6f0d56bd72d22bd11d": "שנהב",
-    "5f081193fde02fe9185215177b6aac5c33ae3495a2bfb4130c565c87ed1fa5f6": "איתי",
-    "7c829cbd2e6e1f147f33b706e05cd3d0ee7f16f424afa753411eee3bf599f8a9": "ריקי",
-    "79ce952dae2f5ab596629a9166f355ff7d925c051f21c50e283c3fbbcb355515": "שלומית"
+  // Sign-in with Google; only emails listed in Firestore "allowed" may enter, and each entry is logged in "logins".
+  // Patient data never goes to Firebase: only the email, name and time of entry.
+  var FIREBASE_CONFIG = {
+    apiKey: "AIzaSyBzk-8CZev_hpeG8WR5iTWYyk72MVm2Yps",
+    authDomain: "patient-chart-95c86.firebaseapp.com",
+    projectId: "patient-chart-95c86",
+    storageBucket: "patient-chart-95c86.firebasestorage.app",
+    messagingSenderId: "548800834777",
+    appId: "1:548800834777:web:21d9f5f6c9a9031c01a2c8"
   };
-  var KEY = "case-tool-access";
-  var box = document.getElementById("wCodeBox"), inp = document.getElementById("wCode"), err = document.getElementById("wErr");
-  function norm(s){ return String(s || "").toUpperCase().replace(/[\s-]/g, ""); }
-  function hash(s){
-    return crypto.subtle.digest("SHA-256", new TextEncoder().encode("case-tool:" + s)).then(function(b){
-      return Array.prototype.map.call(new Uint8Array(b), function(x){ return ("0" + x.toString(16)).slice(-2); }).join("");
-    });
-  }
-  function getSaved(){ try{ return localStorage.getItem(KEY) || ""; }catch(e){ return ""; } }
-  function save(h){ try{ localStorage.setItem(KEY, h); }catch(e){} }
-  function enter(){ w.hidden = true; document.body.style.overflow = ""; window.scrollTo(0,0); }
-  // a code given before, still on the list: no need to type it again (removing it from the list locks it out)
-  if (CODES[getSaved()]) box.hidden = true;
-  function tryEnter(){
-    if (CODES[getSaved()]) return enter();
-    var c = norm(inp.value);
-    if (!c){ err.hidden = false; inp.focus(); return; }
-    hash(c).then(function(h){
-      if (CODES[h]){ save(h); err.hidden = true; enter(); }
-      else { err.hidden = false; inp.select(); }
-    }).catch(function(){ err.hidden = false; });
-  }
-  document.getElementById("wGo").addEventListener("click", tryEnter);
-  inp.addEventListener("keydown", function(e){ if (e.key === "Enter") tryEnter(); });
-  inp.addEventListener("input", function(){ err.hidden = true; });
+  var w = document.getElementById("welcome"), go = document.getElementById("wGo"), who = document.getElementById("wWho"),
+      err = document.getElementById("wErr"), sw = document.getElementById("wSwitch");
+  var KEY = "case-tool-allowed", state = "loading", auth = null, db = null;
   document.body.style.overflow = "hidden";
+  function enter(){ w.hidden = true; document.body.style.overflow = ""; window.scrollTo(0,0); }
+  function lsGet(){ try{ return localStorage.getItem(KEY) || ""; }catch(e){ return ""; } }
+  function lsSet(v){ try{ if (v) localStorage.setItem(KEY, v); else localStorage.removeItem(KEY); }catch(e){} }
+  function ui(s, msg, user){
+    state = s;
+    err.hidden = !msg; err.textContent = msg || "";
+    who.hidden = !user; who.textContent = user ? "מחוברים בתור " + (user.displayName ? user.displayName + " · " : "") + user.email : "";
+    sw.hidden = !(s === "denied" || s === "ok");
+    go.disabled = s === "loading" || s === "checking";
+    go.textContent = s === "ok" ? "כניסה לכלי" : s === "checking" ? "בודק הרשאה…" : s === "loading" ? "טוען…" : "כניסה עם Google";
+  }
+  if (!window.firebase || !FIREBASE_CONFIG){
+    ui("error", "הכניסה לא זמינה כרגע. בדקו שיש חיבור לאינטרנט ונסו לרענן את הדף.");
+    go.disabled = true; return;
+  }
+  firebase.initializeApp(FIREBASE_CONFIG);
+  auth = firebase.auth(); db = firebase.firestore();
+  auth.onAuthStateChanged(function(user){
+    if (!user){ lsSet(""); return ui("out"); }
+    var email = String(user.email || "").toLowerCase();
+    ui("checking", "", user);
+    db.collection("allowed").doc(email).get().then(function(d){
+      if (!d.exists){ lsSet(""); return ui("denied", "המייל הזה לא ברשימת המורשים. פנו לגולן כדי לקבל גישה.", user); }
+      lsSet(email); ui("ok", "", user);
+      db.collection("logins").add({email: email, name: user.displayName || "", at: firebase.firestore.FieldValue.serverTimestamp(),
+        device: /iPhone|iPad/.test(navigator.userAgent) ? "iPhone/iPad" : /Android/.test(navigator.userAgent) ? "Android" : "מחשב"}).catch(function(){});
+    }).catch(function(){
+      // offline: someone already approved on this device may keep working
+      if (lsGet() === email) ui("ok", "", user);
+      else ui("denied", "לא הצלחתי לבדוק את ההרשאה. בדקו את החיבור לאינטרנט ונסו שוב.", user);
+    });
+  });
+  go.addEventListener("click", function(){
+    if (state === "ok") return enter();
+    if (state !== "out" && state !== "error") return;
+    var prov = new firebase.auth.GoogleAuthProvider(); prov.setCustomParameters({prompt: "select_account"});
+    auth.signInWithPopup(prov).catch(function(e){
+      if (e && (e.code === "auth/popup-blocked" || e.code === "auth/operation-not-supported-in-this-environment")) return auth.signInWithRedirect(prov);
+      if (e && e.code === "auth/popup-closed-by-user") return;
+      ui("out", "הכניסה לא הצליחה. נסו שוב.");
+    });
+  });
+  sw.addEventListener("click", function(){ auth.signOut(); });
 })();
 </script>
 <footer class="app-footer">כל הזכויות שמורות לגולן גבריאל פניכל</footer>
