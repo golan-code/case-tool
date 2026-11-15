@@ -208,6 +208,22 @@ textarea{resize:vertical;min-height:44px;overflow:hidden}
 
 .app-footer{text-align:center;font-size:12px;color:#777;padding:18px 16px 24px}
 .doc .copyright{text-align:center;font-size:8pt;color:#888;margin-top:22px;padding-top:6px;border-top:1px solid #e3e3e3;break-inside:avoid}
+.welcome{position:fixed;inset:0;z-index:50;overflow-y:auto;background:linear-gradient(170deg,var(--green) 0%,#2c7350 100%);color:#fff;display:flex;flex-direction:column;align-items:center;padding:max(28px,env(safe-area-inset-top)) 16px max(20px,env(safe-area-inset-bottom))}
+.welcome[hidden]{display:none}
+.welcome .w-in{width:100%;max-width:520px;margin:auto 0;display:flex;flex-direction:column;align-items:center;text-align:center;gap:18px}
+.welcome .w-logo{width:72px;height:72px;border-radius:20px;background:rgba(255,255,255,.14);display:grid;place-items:center}
+.welcome h1{font-size:34px;line-height:1.15;margin:0;font-weight:800}
+.welcome .w-sub{font-size:17px;margin:0;opacity:.92;max-width:26em}
+.welcome .w-list{list-style:none;margin:6px 0 0;padding:0;width:100%;display:grid;gap:10px}
+.welcome .w-list li{background:rgba(255,255,255,.1);border:1px solid rgba(255,255,255,.18);border-radius:12px;padding:12px 14px;display:flex;gap:12px;align-items:center;text-align:right;font-size:15px}
+.welcome .w-list b{display:block;font-size:16px}
+.welcome .w-ic{flex:0 0 36px;height:36px;border-radius:10px;background:#fff;color:var(--green);display:grid;place-items:center;font-weight:800}
+.welcome .w-go{margin-top:6px;width:100%;background:#fff;color:var(--green);border:0;border-radius:12px;padding:14px 18px;font-size:18px;font-weight:800;cursor:pointer;box-shadow:0 6px 20px rgba(0,0,0,.18)}
+.welcome .w-go:hover{background:#f3fbf6}
+.welcome .w-go:focus-visible{outline:3px solid #fff;outline-offset:3px}
+.welcome .w-priv{font-size:13px;opacity:.85;margin:0;max-width:30em}
+.welcome .w-copy{font-size:12px;opacity:.7;margin-top:8px}
+@media print{.welcome{display:none !important}}
 @page{size:A4;margin:13mm 14mm}
 @media print{
   html,body{background:#fff}
@@ -251,6 +267,28 @@ textarea{resize:vertical;min-height:44px;overflow:hidden}
     <div class="paper"><div class="doc" id="printRoot"></div></div>
   </section>
 </main>
+<div class="welcome" id="welcome" role="dialog" aria-modal="true" aria-labelledby="wTitle">
+  <div class="w-in">
+    <div class="w-logo" aria-hidden="true"><svg width="38" height="38" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="3.5" width="14" height="18" rx="2"/><path d="M9 3.5h6v3H9z"/><path d="M8.5 11h7M8.5 14.5h7M8.5 18h4"/></svg></div>
+    <h1 id="wTitle">ברוכים הבאים<br>להצגת מקרה</h1>
+    <p class="w-sub">כלי לבניית הצגת מקרה מסודרת, מוכנה להבאה לסטאז' הקליני.</p>
+    <ul class="w-list">
+      <li><span class="w-ic">1</span><span><b>ממלאים את פרטי המקרה</b>פרטים כלליים, מטרות טיפול, תסמינים, דפוסי חיים ויסודות. אפשר גם מהטלפון.</span></li>
+      <li><span class="w-ic">2</span><span><b>מעלים בדיקות מעבדה</b>קובץ PDF של תוצאות הופך לטבלה מסודרת.</span></li>
+      <li><span class="w-ic">3</span><span><b>מפיקים מסמך PDF</b>מסמך מעוצב, מוכן להדפסה או לשליחה.</span></li>
+    </ul>
+    <button type="button" class="w-go" id="wGo">כניסה לכלי</button>
+    <p class="w-priv">🔒 המידע נשמר רק במכשיר שלכם ולא נשלח לשום מקום.</p>
+    <div class="w-copy">כל הזכויות שמורות לגולן גבריאל פניכל</div>
+  </div>
+</div>
+<script>
+(function(){
+  var w = document.getElementById("welcome");
+  document.getElementById("wGo").addEventListener("click", function(){ w.hidden = true; document.body.style.overflow = ""; window.scrollTo(0,0); });
+  document.body.style.overflow = "hidden";
+})();
+</script>
 <footer class="app-footer">כל הזכויות שמורות לגולן גבריאל פניכל</footer>
 
 <div class="modal" id="picker" hidden>
@@ -934,7 +972,9 @@ function labFromCells(cells, strict){
   cells = cells.map(c => c.replace(/\[[.*\s]*\]/g, "").replace(/^[\]\[]+|[\]\[]+$/g, "").replace(/\s+/g, " ").trim())
     .filter(c => c && !/^\d{1,2}\/\d{1,2}\/\d{2,4}$/.test(c))
     .map(c => c.replace(/^[HL*]\s+(?=\S*[\/%a-z])/, ""))
-    .map(c => { const m = c.match(/^(\d+(?:[.,]\d+)?)\s*([<>])$/); return m ? (m[2] === ">" ? "<" : ">") + m[1] : c; });
+    .map(c => { const m = c.match(/^(\d+(?:[.,]\d+)?)\s*([<>])$/); return m ? (m[2] === ">" ? "<" : ">") + m[1] : c; })
+    // "92 mg/dL" in one cell (Clalit online printouts): split into value and unit
+    .flatMap(c => { const m = c.match(/^([<>]?\d+(?:[.,]\d+)?%?)\s+(\S+)$/); return m && UNIT_RE.test(m[2].toLowerCase()) ? [m[1], m[2]] : [c]; });
   let name = "", value = "", unit = "", range = "";
   for (const c of cells){
     const lc = c.toLowerCase().replace(/\s/g, "");
@@ -1009,6 +1049,17 @@ async function pdfLines(file){
   }
   return lines;
 }
+// reference ranges given as notes under the table, e.g. "הערות לבדיקות CHOLESTEROL:" then "ערך רצוי קטן מ 200"
+function addNoteRanges(found, lines){
+  const txt = lines.map(l => l.join(" "));
+  for (let i = 0; i < txt.length - 1; i++){
+    const h = txt[i].match(/הערות\s+לבדיק(?:ות|ה)\s*:?\s*(.+?)\s*:?\s*$/); if (!h) continue;
+    const m = txt[i+1].match(/(קטן|נמוך|גדול|גבוה)\s*מ[-־\s]*(\d+(?:[.,]\d+)?)/); if (!m) continue;
+    const name = h[1].replace(/:$/, "").trim().toLowerCase();
+    const r = found.find(x => x.name.toLowerCase() === name);
+    if (r && !r.range) r.range = (/קטן|נמוך/.test(m[1]) ? "<" : ">") + m[2];
+  }
+}
 // the date that appears most often is the test date (a birth date shows up once)
 function findDate(text){
   const n = {};
@@ -1048,6 +1099,7 @@ $("#edit").addEventListener("change", async e => {
     if (/pdf/i.test(f.type) || /\.pdf$/i.test(f.name)){
       const lines = await pdfLines(f);
       const found = lines.map(l => labFromCells(l, true)).filter(Boolean);
+      addNoteRanges(found, lines);
       // one or two stray hits mean this is a letter or summary, not a results table
       addLabs(found.length >= 3 ? found : [], lines.map(l => l.join(" ")).join("\n"));
     } else {
