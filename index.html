@@ -276,9 +276,9 @@ body::before{content:"";position:fixed;inset:0;z-index:-1;pointer-events:none;
 .swipe{position:relative;border-radius:10px;overflow:hidden}
 .swipe .case-row{position:relative;z-index:1;border-radius:10px;touch-action:pan-y;transition:transform .2s ease;user-select:none;-webkit-user-select:none}
 .swipe.drag .case-row{transition:none}
-.swipe .sw-del{position:absolute;top:0;bottom:0;width:96px;border:0;background:var(--danger);color:#fff;font-weight:700;font-size:15px;cursor:pointer}
+.swipe .sw-del{position:absolute;top:0;bottom:0;width:96px;min-width:96px;border:0;background:var(--danger);color:#fff;font-weight:700;font-size:15px;cursor:pointer}
 .swipe .sw-del.l{left:0}.swipe .sw-del.r{right:0}
-.swipe .sw-del{visibility:hidden}.swipe.act .sw-del{visibility:visible}
+.swipe .sw-del{visibility:hidden;transition:width .2s ease}.swipe.drag .sw-del{transition:none}.swipe.act .sw-del{visibility:visible}
 .home-tip{font-size:13px;color:#4f5a53;margin:8px 2px 0}
 .cf-text{margin:0 0 6px}
 .cf-warn{margin:0 0 12px;font-size:14px;color:var(--amber)}
@@ -716,7 +716,7 @@ async function renderHome(){
   try{ list = await DB.all(); }catch(e){}
   list.sort((a,b)=> b.updated - a.updated);
   $("#caseList").innerHTML = list.length
-    ? list.map(c => `<div class="swipe" data-id="${esc(c.id)}"><button type="button" class="sw-del l" data-swdel="${esc(c.id)}" tabindex="-1">מחיקה</button><button type="button" class="sw-del r" data-swdel="${esc(c.id)}" tabindex="-1">מחיקה</button><button type="button" class="case-row" data-open="${esc(c.id)}"><span class="nm">${esc(caseName(c))}</span>${backupTag(c)}<span class="dt">${fmtDate(c.updated)}</span></button></div>`).join("") + `<div class="home-tip">כדי למחוק תיק, גוררים אותו לצד ולוחצים "מחיקה".</div>`
+    ? list.map(c => `<div class="swipe" data-id="${esc(c.id)}"><button type="button" class="sw-del l" data-swdel="${esc(c.id)}" tabindex="-1">מחיקה</button><button type="button" class="case-row" data-open="${esc(c.id)}"><span class="nm">${esc(caseName(c))}</span>${backupTag(c)}<span class="dt">${fmtDate(c.updated)}</span></button></div>`).join("") + `<div class="home-tip">כדי למחוק תיק, גוררים אותו ימינה. גרירה עד הסוף פותחת מיד את אישור המחיקה.</div>`
     : `<div class="empty">עדיין אין תיקים. לחצו על "תיק חדש" כדי להתחיל.</div>`;
   if (DB.ok && list.length) askPersist();
   if (DB.ok && /iPhone|iPad/.test(navigator.userAgent) && !navigator.standalone && !(window.matchMedia && matchMedia("(display-mode: standalone)").matches)){
@@ -1540,7 +1540,13 @@ $("#newCase").addEventListener("click", async ()=>{
 /* swipe a case sideways to reveal "מחיקה" (works with a finger or a mouse) */
 const SW_W = 96;
 let swOpen = null, sw = null, swJustDragged = false;
-function swSet(box, x){ box.querySelector(".case-row").style.transform = x ? `translateX(${x}px)` : ""; box.dataset.x = x || 0; box.classList.toggle("act", !!x); }
+// only to the right: the red "מחיקה" grows behind the row as it moves
+function swSet(box, x){
+  x = Math.max(0, x || 0);
+  box.querySelector(".case-row").style.transform = x ? `translateX(${x}px)` : "";
+  const d = box.querySelector(".sw-del"); if (d) d.style.width = Math.max(SW_W, x) + "px";
+  box.dataset.x = x; box.classList.toggle("act", !!x);
+}
 function swCloseAll(except){ document.querySelectorAll(".swipe").forEach(b => { if (b !== except && +b.dataset.x) swSet(b, 0); }); if (!except) swOpen = null; }
 $("#caseList").addEventListener("pointerdown", e => {
   const row = e.target.closest(".swipe .case-row"); if (!row || (e.pointerType === "mouse" && e.button !== 0)) return;
@@ -1556,15 +1562,18 @@ $("#caseList").addEventListener("pointermove", e => {
     sw.drag = true; sw.box.classList.add("drag"); swCloseAll(sw.box);
     try{ sw.row.setPointerCapture(e.pointerId); }catch(_){}
   }
-  swSet(sw.box, Math.max(-SW_W - 20, Math.min(SW_W + 20, sw.base + dx)));
+  swSet(sw.box, Math.min(sw.box.clientWidth, sw.base + dx));
 });
 function swEnd(e){
   if (!sw || e.pointerId !== sw.id) return;
   const s = sw; sw = null;
   if (!s.drag) return;
   s.box.classList.remove("drag"); swJustDragged = true; setTimeout(() => swJustDragged = false, 50);
-  const x = +s.box.dataset.x;
-  if (Math.abs(x) > SW_W / 2){ swSet(s.box, x > 0 ? SW_W : -SW_W); swOpen = s.box; } else { swSet(s.box, 0); swOpen = null; }
+  const x = +s.box.dataset.x, full = s.box.clientWidth * 0.6;
+  // dragged most of the way: slide out and ask at once; part of the way: leave "מחיקה" showing
+  if (x > full){ swSet(s.box, s.box.clientWidth); swOpen = s.box; askDelete(s.box.dataset.id); }
+  else if (x > SW_W / 2){ swSet(s.box, SW_W); swOpen = s.box; }
+  else { swSet(s.box, 0); swOpen = null; }
 }
 $("#caseList").addEventListener("pointerup", swEnd);
 $("#caseList").addEventListener("pointercancel", swEnd);
