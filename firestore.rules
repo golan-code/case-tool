@@ -1,0 +1,48 @@
+rules_version = '2';
+
+// Closed system: only approved users who signed in with email + password can touch the data.
+// The list of approved users is the "allowed" collection: one document per email (in lower case),
+// for example allowed/someone@gmail.com. Only the admin edits it, from the Firebase Console
+// (the console is not limited by these rules; the app and the public API are).
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // signed in with email + password (not Google, not anonymous, not any other way)
+    function signedInWithPassword() {
+      return request.auth != null
+        && request.auth.token.firebase.sign_in_provider == 'password'
+        && request.auth.token.email is string;
+    }
+
+    function myEmail() {
+      return request.auth.token.email.lower();
+    }
+
+    function approved() {
+      return signedInWithPassword()
+        && exists(/databases/$(database)/documents/allowed/$(myEmail()));
+    }
+
+    // the allowlist: each user may only check their own entry; nobody may list it or change it from the app
+    match /allowed/{email} {
+      allow get: if signedInWithPassword() && email == myEmail();
+      allow list, create, update, delete: if false;
+    }
+
+    // entry log: an approved user may add one record about their own entry; nobody may read or change it from the app
+    match /logins/{id} {
+      allow create: if approved()
+        && request.resource.data.keys().hasOnly(['email', 'name', 'at', 'device'])
+        && request.resource.data.email == myEmail()
+        && request.resource.data.at == request.time
+        && request.resource.data.name is string && request.resource.data.name.size() < 200
+        && request.resource.data.device is string && request.resource.data.device.size() < 50;
+      allow read, update, delete: if false;
+    }
+
+    // everything else is closed
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}
