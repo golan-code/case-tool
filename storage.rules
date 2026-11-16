@@ -1,0 +1,10 @@
+rules_version = '2';
+
+// The app does not keep any files in Firebase Storage, so it is fully closed.
+service firebase.storage {
+  match /b/{bucket}/o {
+    match /{allPaths=**} {
+      allow read, write: if false;
+    }
+  }
+}
