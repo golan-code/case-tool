@@ -1,4 +1,5 @@
 <!DOCTYPE html>
+<!-- case-tool v=19 -->
 <html lang="he" dir="rtl">
 <head>
 <meta charset="utf-8">
@@ -188,6 +189,8 @@ textarea{resize:vertical;min-height:44px;overflow:hidden}
 /* ---------- printed case presentation ---------- */
 .doc{font-size:10.5pt;line-height:1.55;color:#1d1d1d}
 .doc .bsd{text-align:right;font-size:9pt;color:#555;margin-bottom:4px}
+.doc .doc-top{display:flex;align-items:baseline;gap:12px}
+.doc .doc-top .made{margin-inline-start:auto;font-size:9pt;color:#555;margin-bottom:4px;font-variant-numeric:tabular-nums}
 .doc h1{text-align:center;color:var(--green);font-size:16pt;margin:0 0 14px;font-weight:700}
 .doc .sec{background:var(--green-soft);border-right:4px solid var(--green);color:var(--green);font-size:12pt;font-weight:700;padding:5px 10px;margin:16px 0 8px;break-after:avoid}
 .doc h3{font-size:10.5pt;margin:10px 0 3px;color:#333;font-weight:700;break-after:avoid}
@@ -412,6 +415,8 @@ body::before{content:"";position:fixed;inset:0;z-index:-1;pointer-events:none;
     go.textContent = s === "ok" ? "כניסה לכלי" : s === "checking" ? "בודק הרשאה…" : s === "loading" ? "טוען…" : "כניסה עם Google";
   }
   if (!window.firebase || !FIREBASE_CONFIG){
+    var prev = lsGet();
+    if (prev && !navigator.onLine){ okEmail = prev; enter(); return; }
     ui("error", "הכניסה לא זמינה כרגע. בדקו שיש חיבור לאינטרנט ונסו לרענן את הדף.");
     go.disabled = true; return;
   }
@@ -1010,7 +1015,7 @@ function renderEdit(){
       <div class="adders"><button type="button" class="btn small primary" data-act="lab-paste-go">המרה לטבלה</button></div></div>
     <div class="note" id="labMsg" hidden></div>
     ${c.labs.rows.some(r => r.date) ? "" : `<div class="grid2" style="margin-bottom:10px">${inp("labs.date","","תאריך הבדיקה")}</div>`}
-    ${c.labs.rows.map((r,i)=>`${r.date && (i === 0 || c.labs.rows[i-1].date !== r.date) ? `<div class="lab-date"><label>בדיקות מתאריך<input type="text" inputmode="numeric" data-labdate="${esc(r.date)}" value="${esc(r.date)}" aria-label="תאריך הבדיקות"></label></div>` : ""}<div class="lab-row">${inp(`labs.rows.${i}.name`,"בדיקה")}${inp(`labs.rows.${i}.value`,"תוצאה")}${inp(`labs.rows.${i}.unit`,"יחידות")}${inp(`labs.rows.${i}.range`,"טווח תקין")}${tools(`labs.rows.${i}`,{move:false})}</div>`).join("")}
+    ${c.labs.rows.map((r,i)=>`${!r.date && i > 0 && c.labs.rows[i-1].date ? `<div class="lab-date">בדיקות נוספות</div>` : ""}${r.date && (i === 0 || c.labs.rows[i-1].date !== r.date) ? `<div class="lab-date"><label>בדיקות מתאריך<input type="text" inputmode="numeric" data-labdate="${esc(r.date)}" value="${esc(r.date)}" aria-label="תאריך הבדיקות"></label></div>` : ""}<div class="lab-row">${inp(`labs.rows.${i}.name`,"בדיקה")}${inp(`labs.rows.${i}.value`,"תוצאה")}${inp(`labs.rows.${i}.unit`,"יחידות")}${inp(`labs.rows.${i}.range`,"טווח תקין")}${tools(`labs.rows.${i}`,{move:false})}</div>`).join("")}
     <div class="adders"><button type="button" class="btn small" data-act="add-lab">+ הוספת ערך</button></div>
     ${photosBlock("labs.photos","כיתוב")}</section>`;
 
@@ -1137,13 +1142,15 @@ function resortMeals(){
   const before = cur.diet.slice(); sortMeals(cur.diet);
   if (cur.diet.some((d,i) => d !== before[i])){ touch(); setTimeout(renderEdit, 0); }
 }
-$("#edit").addEventListener("focusin", e => { const t = e.target; if (t.dataset && t.dataset.combo){ t.dataset.fresh = "1"; comboOpen(t); } });
+$("#edit").addEventListener("focusin", e => { const t = e.target; if (t.dataset && t.dataset.combo){ t.dataset.fresh = "1"; t.dataset.arrowed = ""; comboOpen(t); } });
 $("#edit").addEventListener("focusout", e => {
   const t = e.target; if (!t.dataset || !t.dataset.combo) return;
   // leaving the field completes a partial entry, e.g. "165" in height becomes "1.65"
   const v = t.value.trim();
   if (v && !COMBO[t.dataset.combo].text && !COMBO[t.dataset.combo].values.includes(v)){
-    const n = isTimeKind(t.dataset.combo) ? normTime(v) : null;   // an exact time the user typed, e.g. 23:10
+    // percentages: a whole number 0-100 stays exactly as typed ("3" is 3, not 30)
+    const n = t.dataset.combo === "pct" && /^\d+$/.test(v) && +v <= 100 ? String(+v)
+      : isTimeKind(t.dataset.combo) ? normTime(v) : null;   // an exact time the user typed, e.g. 23:10
     if (n) comboPick(t, n);
     else { const m = comboMatches(t.dataset.combo, v); if (m.length) comboPick(t, m[0]); }
   }
@@ -1153,7 +1160,7 @@ $("#edit").addEventListener("focusout", e => {
 $("#edit").addEventListener("click", e => {
   const li = e.target.closest(".combo-list li"); if (li) comboPick(li.closest(".combo").querySelector("input"), li.dataset.v);
 });
-$("#edit").addEventListener("input", e => { const t = e.target; if (t.dataset && t.dataset.combo){ t.dataset.fresh = "0"; comboOpen(t); if (/^life\.sleep\./.test(t.dataset.path || "")) updateSleepTotal(); } });
+$("#edit").addEventListener("input", e => { const t = e.target; if (t.dataset && t.dataset.combo){ t.dataset.fresh = "0"; t.dataset.arrowed = ""; comboOpen(t); if (/^life\.sleep\./.test(t.dataset.path || "")) updateSleepTotal(); } });
 $("#edit").addEventListener("mousedown", e => {
   const li = e.target.closest(".combo-list li"); if (!li) return;
   e.preventDefault(); comboPick(li.closest(".combo").querySelector("input"), li.dataset.v);
@@ -1168,12 +1175,14 @@ $("#edit").addEventListener("keydown", e => {
   }
   const items = [...list.children], i = items.findIndex(li => li.classList.contains("on"));
   if (e.key === "ArrowDown" || e.key === "ArrowUp"){
-    e.preventDefault();
+    e.preventDefault(); t.dataset.arrowed = "1";
     let j = i < 0 ? items.indexOf(list.querySelector(".cur")) : i;
     j = Math.max(0, Math.min(items.length - 1, j + (e.key === "ArrowDown" ? 1 : -1)));
     items.forEach(li => li.classList.remove("on")); items[j].classList.add("on"); items[j].scrollIntoView({block:"nearest"});
   } else if (e.key === "Enter"){
-    if (i >= 0){ e.preventDefault(); comboPick(t, items[i].dataset.v); }
+    const n = isTimeKind(t.dataset.combo) && t.dataset.arrowed !== "1" ? normTime(t.value) : null;
+    if (n){ e.preventDefault(); comboPick(t, n); }
+    else if (i >= 0){ e.preventDefault(); comboPick(t, items[i].dataset.v); }
   } else if (e.key === "Escape"){ comboClose(t); }
 });
 
@@ -1341,7 +1350,7 @@ function labFromCells(cells, strict){
     if (!range && RANGE_RE.test(c)) { range = fixRange(c); continue; }
     if (!unit && (UNIT_RE.test(lc) || /^(?:[a-zµ%][^\s]*)?\/[^\s]+$|^10\^\d+\/\S+$/i.test(c))) { unit = c.replace(/\s/g, ""); continue; }
     if (!value && VAL_RE.test(c) && name) { value = cleanVal(c); continue; }
-    if (!name && /[A-Za-z\u0590-\u05FF]{2}/.test(c) && !VAL_RE.test(c)) { name = c; continue; }
+    if (!name && /[A-Za-z\u0590-\u05FF]/.test(c) && !VAL_RE.test(c) && !RANGE_RE.test(c) && !UNIT_RE.test(lc)) { name = c; continue; }
     // a cell holding "value unit" or "range unit" together
     let m;
     if (!value && name && (m = c.match(/^([<>]?\d+(?:[.,]\d+)?%?)\s+(\S+)$/)) && UNIT_RE.test(m[2].toLowerCase())) { value = m[1]; if (!unit) unit = m[2]; continue; }
@@ -1445,8 +1454,8 @@ function findDate(text){
 }
 // keep the rows in date order, oldest first
 function sortLabs(){
-  const dv = r => { const m = String(r.date || "").match(/(\d+)[\/.](\d+)[\/.](\d+)/); return m ? (m[3].length === 2 ? 2000 + +m[3] : +m[3])*10000 + +m[2]*100 + +m[1] : 0; };
-  cur.labs.rows = cur.labs.rows.map((r,i) => [r,i]).sort((a,b) => (dv(a[0]) - dv(b[0])) || (a[1] - b[1])).map(x => x[0]);
+  const dv = r => { const m = String(r.date || "").match(/(\d+)[\/.](\d+)[\/.](\d+)/); return m ? (m[3].length === 2 ? 2000 + +m[3] : +m[3])*10000 + +m[2]*100 + +m[1] : Infinity; };   // no date: last
+  cur.labs.rows = cur.labs.rows.map((r,i) => [r,i]).sort((a,b) => (dv(a[0]) === dv(b[0]) ? 0 : dv(a[0]) < dv(b[0]) ? -1 : 1) || (a[1] - b[1])).map(x => x[0]);
 }
 // changing a date heading moves every test of that report to the new date
 $("#edit").addEventListener("change", e => {
@@ -1473,7 +1482,7 @@ function addLabs(found, dateText){
   sortLabs();
   touch(); renderEdit();
   const m2 = $("#labMsg"); m2.hidden = false; m2.classList.remove("warn");
-  m2.textContent = `נוספו ${n} בדיקות. כדאי לעבור עליהן ולתקן אם משהו נקרא לא נכון.`;
+  m2.textContent = n === 1 ? "נוספה בדיקה אחת. כדאי לעבור עליה ולתקן אם משהו נקרא לא נכון." : `נוספו ${n} בדיקות. כדאי לעבור עליהן ולתקן אם משהו נקרא לא נכון.`;
   m2.scrollIntoView({block:"start"});
 }
 $("#edit").addEventListener("change", async e => {
@@ -1561,9 +1570,12 @@ function photoRow(arr, cls, capKey){
 }
 function buildDoc(c){
   const g = c.general;
-  let L = 0; const sec = t => `<div class="sec">${LETTERS[L++]}. ${esc(t)}</div>`;
+  // each section has a fixed letter; an empty section is not printed and no other section takes its letter
+  const sec = (letter, t) => `<div class="sec">${letter}. ${esc(t)}</div>`;
   let h = "";
-  if (c.bsd) h += `<div class="bsd">בס"ד</div>`;
+  // the date the document was produced, top left (בס"ד stays top right)
+  const now = new Date(), made = `${String(now.getDate()).padStart(2,"0")}/${String(now.getMonth()+1).padStart(2,"0")}/${now.getFullYear()}`;
+  h += `<div class="doc-top">${c.bsd ? `<div class="bsd">בס"ד</div>` : ""}<div class="made">הופק בתאריך ${made}</div></div>`;
   h += `<h1>הצגת מקרה</h1>`;
 
   // א
@@ -1582,7 +1594,7 @@ function buildDoc(c){
   ].filter(Boolean);
   const mp = photoRow(c.mainPhotos, "", "label");
   if (right.length || left.length || mp){
-    h += sec("פרטים כלליים");
+    h += sec("א", "פרטים כלליים");
     if (right.length || left.length){
       const n = Math.max(right.length, left.length); let rows = "";
       for (let i=0;i<n;i++) rows += (right[i]||"<div></div>") + (left[i]||"<div></div>");
@@ -1592,22 +1604,23 @@ function buildDoc(c){
   }
 
   // ב
-  const goals = c.goals.filter(x => has(x.title));
+  // a goal keeps the number of its place in the editor; an empty goal is not printed
+  const goals = c.goals.map((x,i) => [x,i]).filter(([x]) => has(x.title));
   if (goals.length){
-    h += sec("מטרות הטיפול (לפי סדר חשיבות)");
-    h += goals.map((x,i)=>`<div class="goal">${i+1}. מטרה ${ORD[i]||(i+1)} — ${esc(x.title.trim())}${has(x.detail)?`<div class="gd">${esc(x.detail.trim())}</div>`:""}</div>`).join("");
+    h += sec("ב", "מטרות הטיפול (לפי סדר חשיבות)");
+    h += goals.map(([x,i])=>`<div class="goal">${i+1}. מטרה ${ORD[i]||(i+1)} — ${esc(x.title.trim())}${has(x.detail)?`<div class="gd">${esc(x.detail.trim())}</div>`:""}</div>`).join("");
   }
 
   // ג
   const sys = c.systems.map(s => ({s, list: liList(s.items, true), ph: photoRow(s.photos, "sym", "caption")})).filter(x => x.list || x.ph);
   if (sys.length){
-    h += sec("סימנים ותסמינים לפי מערכות");
+    h += sec("ג", "סימנים ותסמינים לפי מערכות");
     h += sys.map(x => `${has(x.s.name)?`<h3>${esc(x.s.name)}</h3>`:""}${x.list}${x.ph}`).join("");
   }
 
   // ד
   const meds = liList(c.meds);
-  if (meds){ h += sec("תרופות, תוספים, סמים"); h += meds; }
+  if (meds){ h += sec("ד", "תרופות, תוספים, סמים"); h += meds; }
 
   // ה
   const diet = sortMeals(c.diet.filter(d => has(d.text)));
@@ -1616,7 +1629,7 @@ function buildDoc(c){
   const actsFor = k => c.life.acts.filter(a => a.kind === k && (has(a.name) || has(a.detail)));
   const actsHtml = ["activity","hobby"].map(k => { const rows = actsFor(k); return rows.length ? `<h3>${ACT_KINDS[k].title}</h3><ul>${rows.map(a => has(a.name) && has(a.detail) ? `<li><b>${esc(a.name.trim())}:</b> ${esc(a.detail.trim())}</li>` : `<li>${esc((a.name || a.detail).trim())}</li>`).join("")}</ul>` : ""; }).join("");
   if (diet.length || groups.length || extra.length || actsHtml){
-    h += sec("דפוסי חיים");
+    h += sec("ה", "דפוסי חיים");
     if (diet.length) h += `<h3>ארוחות</h3><table>${diet.map(d=>`<tr><td class="meal">${esc(d.meal)}${has(d.time)?`<small>${esc(d.time)}</small>`:""}</td><td class="pre">${esc(d.text.trim())}</td></tr>`).join("")}</table>`;
     // drinks, then activities and hobbies, then the rest
     const groupHtml = ({g, rows}) => {
@@ -1631,17 +1644,18 @@ function buildDoc(c){
   // ו
   const els = ELEMENTS.filter(([k]) => pct(c.general[k]) > 0);
   if (els.length){
-    h += sec("יסודות");
+    h += sec("ו", "יסודות");
     h += `<div class="elems-pr">${elBar(c.general)}<div class="el-legend">${els.map(([k,name,col]) => `<span><i style="background:${col}"></i>${name} ${pct(c.general[k])}%</span>`).join("")}</div></div>`;
   }
 
   // ז
-  const labs = c.labs.rows.filter(r => has(r.name) || has(r.value));
+  // rows without a date print last (same order as in the editor)
+  const labs = c.labs.rows.filter(r => has(r.name) || has(r.value)).map((r,i) => [r,i]).sort((a,b) => (has(a[0].date) ? 0 : 1) - (has(b[0].date) ? 0 : 1) || a[1] - b[1]).map(x => x[0]);
   const lp = photoRow(c.labs.photos, "sym", "caption");
   if (labs.length || lp){
-    h += sec("בדיקות מעבדה" + (has(c.labs.date) ? ` (${c.labs.date.trim()})` : ""));
-    if (labs.length) h += `<div class="lab-legend"><span><i class="ok"></i>בטווח</span><span><i class="low"></i>נמוך</span><span><i class="high"></i>גבוה</span><span class="sep">|</span><span>הירוק = טווח הייחוס</span></div>
-      ${labGroups(labs).map(([d, rows]) => `${d ? `<div class="lab-when">בדיקות מתאריך ${esc(d)}</div>` : ""}<table class="labs${rows.some(r => parseRange(r.range)) ? "" : " norng"}"><thead><tr><th>בדיקה</th><th>תוצאה</th><th class="lrange">טווח</th><th class="viz">תצוגה</th><th class="lst">סטטוס</th></tr></thead><tbody>${rows.map(labRow).join("")}</tbody></table>`).join("")}`;
+    h += sec("ז", "בדיקות מעבדה" + (has(c.labs.date) && !labs.some(r => has(r.date)) ? ` (${c.labs.date.trim()})` : ""));
+    if (labs.some(r => parseRange(r.range))) h += `<div class="lab-legend"><span><i class="ok"></i>בטווח</span><span><i class="low"></i>נמוך</span><span><i class="high"></i>גבוה</span><span class="sep">|</span><span>הירוק = טווח הייחוס</span></div>`;
+    if (labs.length) h += `${labGroups(labs).map(([d, rows], gi, all) => `${d ? `<div class="lab-when">בדיקות מתאריך ${esc(d)}</div>` : all.length > 1 ? `<div class="lab-when">בדיקות נוספות</div>` : ""}<table class="labs${rows.some(r => parseRange(r.range)) ? "" : " norng"}"><thead><tr><th>בדיקה</th><th>תוצאה</th><th class="lrange">טווח</th><th class="viz">תצוגה</th><th class="lst">סטטוס</th></tr></thead><tbody>${rows.map(labRow).join("")}</tbody></table>`).join("")}`;
     h += lp;
   }
   h += `<div class="copyright"><span class="cr-c" aria-hidden="true">©</span> כל הזכויות שמורות ל<strong>גולן גבריאל פניכל</strong></div>`;
