@@ -145,6 +145,9 @@ textarea{resize:vertical;min-height:44px;overflow:hidden}
 .undo[hidden]{display:none}
 .undo button{background:#fff;color:var(--ink);border:0;border-radius:7px;padding:6px 14px;font-weight:700;cursor:pointer}
 @media print{.undo,.modal{display:none !important}}
+.info-btn{display:inline-flex;align-items:center;margin-inline-start:8px;padding:1px 9px;border:1px solid var(--green);border-radius:999px;background:#fff;color:var(--green);font:inherit;font-size:12.5px;font-weight:600;line-height:1.5;cursor:pointer;vertical-align:middle}
+.info-sub{margin:0 0 8px;font-size:15px}
+.info-list{margin:0;padding-inline-start:20px;font-size:14.5px;line-height:1.5}.info-list li{margin:0 0 8px}.info-list b{color:var(--green)}
 .modal{position:fixed;inset:0;z-index:20;background:rgba(20,30,25,.45);display:flex;align-items:flex-start;justify-content:center;padding:max(24px,env(safe-area-inset-top)) 16px 24px;overflow-y:auto}
 .modal[hidden]{display:none}
 .modal-box{background:var(--card);border-radius:14px;width:100%;max-width:440px;padding:14px 16px 16px;box-shadow:0 10px 40px rgba(0,0,0,.25)}
@@ -290,6 +293,13 @@ body::before{content:"";position:fixed;inset:0;z-index:-1;pointer-events:none;
 .cf-text{margin:0 0 6px}
 .cf-warn{margin:0 0 12px;font-size:14px;color:var(--amber)}
 .cf-btns{display:flex;gap:10px;justify-content:flex-start}
+/* copyright line: clearly visible on every screen and in the PDF */
+.welcome .w-copy{font-size:14px;color:var(--green);margin-top:4px;letter-spacing:.01em}
+.welcome .w-copy strong,.app-footer strong,.doc .copyright strong{font-weight:800}
+.app-footer{padding:20px 16px 28px}
+.app-footer .cr{display:inline-block;font-size:14px;color:var(--green);background:rgba(251,248,238,.92);border:1px solid rgba(31,90,61,.25);border-radius:999px;padding:6px 16px;box-shadow:0 2px 8px rgba(20,40,30,.08)}
+.cr-c{font-weight:700;margin-inline-end:2px}
+.doc .copyright{font-size:9.5pt;color:var(--green);border-top:1.5px solid var(--green);padding-top:7px;margin-top:24px}
 @media (prefers-reduced-motion:reduce){*{transition:none !important}}
 </style>
 </head>
@@ -341,7 +351,7 @@ body::before{content:"";position:fixed;inset:0;z-index:-1;pointer-events:none;
     <button type="button" class="w-alt" id="wCopy" hidden>העתקת הקישור לדפדפן</button>
     <button type="button" class="w-alt" id="wSwitch" hidden>החלפת משתמש</button>
     <p class="w-priv">🔒 המידע נשמר רק במכשיר שלכם ולא נשלח לשום מקום.</p>
-    <div class="w-copy">כל הזכויות שמורות לגולן גבריאל פניכל</div>
+    <div class="w-copy"><span class="cr-c" aria-hidden="true">©</span> כל הזכויות שמורות ל<strong>גולן גבריאל פניכל</strong></div>
   </div>
 </div>
 <script src="https://cdn.jsdelivr.net/npm/firebase@10.12.2/firebase-app-compat.js"></script>
@@ -432,7 +442,7 @@ body::before{content:"";position:fixed;inset:0;z-index:-1;pointer-events:none;
   sw.addEventListener("click", function(){ auth.signOut(); });
 })();
 </script>
-<footer class="app-footer">כל הזכויות שמורות לגולן גבריאל פניכל</footer>
+<footer class="app-footer"><span class="cr"><span class="cr-c" aria-hidden="true">©</span> כל הזכויות שמורות ל<strong>גולן גבריאל פניכל</strong></span></footer>
 
 <div class="modal" id="confirmDel" hidden>
   <div class="modal-box" role="alertdialog" aria-modal="true" aria-labelledby="cfTitle" aria-describedby="cfText">
@@ -440,6 +450,12 @@ body::before{content:"";position:fixed;inset:0;z-index:-1;pointer-events:none;
     <p class="cf-text" id="cfText"></p>
     <p class="cf-warn" id="cfWarn" hidden></p>
     <div class="cf-btns"><button type="button" class="btn danger" id="cfYes" style="background:var(--danger);color:#fff;border-color:var(--danger)">מחיקה לצמיתות</button><button type="button" class="btn" id="cfNo">ביטול</button></div>
+  </div>
+</div>
+<div class="modal" id="infoBox" hidden>
+  <div class="modal-box" role="dialog" aria-modal="true" aria-labelledby="infoTitle">
+    <div class="modal-head"><h2 id="infoTitle"></h2><button type="button" class="ic" id="infoClose" title="סגירה" aria-label="סגירה">✕</button></div>
+    <div id="infoBody"></div>
   </div>
 </div>
 <div class="modal" id="picker" hidden>
@@ -528,9 +544,34 @@ function parentOf(p){ const ks = p.split("."); const i = +ks.pop(); return {arr:
 function fmtDate(t){ try{ return new Date(t).toLocaleDateString("he-IL",{day:"numeric",month:"numeric",year:"numeric"}); }catch(e){ return ""; } }
 
 /* section ה: fixed sub-sections after the meals; [key, label, kind] where kind "time" gives a time pick list */
+// info popups next to a field label (screen only, never printed)
+const INFO = {
+  bristol: {title:"סולם בריסטול", html:`<h3 class="info-sub">איך מפרשים?</h3><ul class="info-list">
+    <li><b>1–2:</b> מתאימים לנטייה לעצירות.</li>
+    <li><b>3–4:</b> בדרך כלל המרקם התקין והרצוי.</li>
+    <li><b>5:</b> צואה רכה; המשמעות תלויה בתדירות ובתסמינים.</li>
+    <li><b>6–7:</b> צואה דייסתית עד מימית, שמתאימה לשלשול.</li></ul>`}
+};
+(function(){
+  let back = null; const box = () => document.getElementById("infoBox");
+  function close(){ box().hidden = true; if (back && document.contains(back)) back.focus(); back = null; }
+  document.addEventListener("click", e => {
+    const b = e.target.closest && e.target.closest(".info-btn");
+    if (!b) return;
+    e.preventDefault(); e.stopPropagation();
+    const it = INFO[b.dataset.info]; if (!it) return;
+    document.getElementById("infoTitle").textContent = it.title;
+    document.getElementById("infoBody").innerHTML = it.html;
+    back = b; box().hidden = false; document.getElementById("infoClose").focus();
+  }, true);
+  document.addEventListener("click", e => { if (e.target === box() || (e.target.closest && e.target.closest("#infoClose"))) close(); });
+  document.addEventListener("keydown", e => { if (e.key === "Escape" && !box().hidden) close(); });
+})();
 const LIFE = [
   {key:"drinks",    title:"שתייה",          fields:[["water","מים"],["coffee","קפה ותה"],["other","משקאות אחרים"]]},
   {key:"sleep",     title:"שינה",           fields:[["bed","שעת שינה","time"],["wake","שעת קימה","time"],["quality","איכות השינה"],["night","יקיצות בלילה"]]},
+  {key:"urine",     title:"שתן",            fields:[["freq","תדירות ביום"],["night","קימה בלילה לשתן"],["color","צבע וריח"],["notes","צריבה, דחיפות או הערות"]]},
+  {key:"stool",     title:"צואה",           fields:[["freq","תדירות"],["bristol","צורה (סולם בריסטול 1-7)",null,"bristol"],["color","צבע"],["notes","גזים, כאב, ריר או דם"]]},
   {key:"relations", title:"יחסים אישיים",   fields:[["partner","בן/בת זוג"],["kids","ילדים"],["parents","הורים"]]}
 ];
 // the four elements as percentages of the whole (meant to total 100%)
@@ -777,10 +818,11 @@ function num(path, ph, label){
   const v = getPath(cur, path) || "";
   return `<label class="fld" for="f-${path}"><span>${esc(label)}</span><input type="text" inputmode="decimal" id="f-${path}" data-path="${path}" value="${esc(v)}" placeholder="${esc(ph)}"></label>`;
 }
-function area(path, ph, label){
+function area(path, ph, label, info){
   const v = getPath(cur, path) || "";
   const el = `<textarea id="f-${path}" data-path="${path}" rows="1" placeholder="${esc(ph)}"${!label && ph ? ` aria-label="${esc(ph)}"` : ""}>${esc(v)}</textarea>`;
-  return label ? `<label class="fld" for="f-${path}"><span>${esc(label)}</span>${el}</label>` : el;
+  const ib = info && INFO[info] ? `<button type="button" class="info-btn" data-info="${info}" aria-haspopup="dialog">ⓘ מה זה</button>` : "";
+  return label ? `<label class="fld" for="f-${path}"><span>${esc(label)}${ib}</span>${el}</label>` : el;
 }
 function tools(path, opts={}){
   // delete only; reorder arrows were removed at the user's request
@@ -830,7 +872,7 @@ function renderEdit(){
 
   // ג
   h += `<section class="card"><h2><span class="letter">ג</span>סימנים ותסמינים לפי מערכות</h2>
-    <div class="note" style="margin-top:0">${c.systems.length ? "שורה בלי פירוט, ומערכת בלי תוכן, לא יופיעו ב-PDF." : "עדיין לא נבחרה מערכת. לחצו על \"+ הוספת מערכת\" ובחרו מהרשימה."}</div>
+    <div class="note" style="margin-top:0">${c.systems.length ? "מערכת בלי סימנים לא תופיע ב-PDF. סימן בלי תיאור יופיע ב-PDF בשמו בלבד." : "עדיין לא נבחרה מערכת. לחצו על \"+ הוספת מערכת\" ובחרו מהרשימה."}</div>
     ${c.systems.map((s,si)=>`<div class="sub"><div class="sub-head">${inp(`systems.${si}.name`,"שם המערכת")}${tools(`systems.${si}`)}</div>
       ${itemsBlock(`systems.${si}.items`,"סימן","תיאור")}
       ${photosBlock(`systems.${si}.photos`,"כיתוב")}</div>`).join("")}
@@ -848,9 +890,9 @@ function renderEdit(){
       ${c.diet.length ? "" : `<div class="note" style="margin-top:0">לחצו על "+ הוספת ארוחה" ובחרו ארוחה מהרשימה.</div>`}
       ${c.diet.map((d,i)=>`<div class="meal-row"><div class="meal-top">${combo(`diet.${i}.meal`,"","meal")}${combo(`diet.${i}.time`,"","time")}${tools(`diet.${i}`)}</div>${area(`diet.${i}.text`,"מה אוכלים")}</div>`).join("")}
       <div class="adders"><button type="button" class="btn primary" data-act="add-meal">+ הוספת ארוחה</button></div></div>
-    ${LIFE.map(g=>`<div class="lsub"><h3 class="lt">${esc(g.title)}</h3><div class="grid2">${g.fields.map(([k,label,kind])=> kind === "time"
+    ${LIFE.map(g=>`<div class="lsub"><h3 class="lt">${esc(g.title)}</h3><div class="grid2">${g.fields.map(([k,label,kind,info])=> kind === "time"
         ? combo(`life.${g.key}.${k}`, label, "time", k === "bed" ? "23:00" : "06:30")
-        : area(`life.${g.key}.${k}`, "", label)).join("")}</div></div>${g.key === "drinks" ? actsBlock(c) : ""}`).join("")}
+        : area(`life.${g.key}.${k}`, "", label, info)).join("")}</div></div>${g.key === "drinks" ? actsBlock(c) : ""}`).join("")}
     ${c.life.extra.length ? `<div class="lsub"><h3 class="lt">נושאים נוספים</h3>${c.life.extra.map((it,i)=>`<div class="item">${inp(`life.extra.${i}.title`,"נושא")}${area(`life.extra.${i}.text`,"פירוט")}${tools(`life.extra.${i}`)}</div>`).join("")}</div>` : ""}
     <div class="adders" style="margin-top:12px"><button type="button" class="btn small" data-act="add-life">+ הוספת נושא</button></div></section>`;
 
@@ -1388,13 +1430,14 @@ $("#jsonPick").addEventListener("change", async e => {
 });
 
 /* ---------- print document ---------- */
-function liList(items){
-  // a row prints only when its description is filled, so pre-filled titles never print alone
-  const rows = items.filter(it => has(it.text));
+function liList(items, titleAlone){
+  // meds: the type is pre-filled from the list, so it prints only with a detail.
+  // symptoms: the name is typed by the user, so a symptom with no description still prints (titleAlone)
+  const rows = items.filter(it => has(it.text) || (titleAlone && has(it.title)));
   if (!rows.length) return "";
-  return `<ul>${rows.map(it => has(it.title)
+  return `<ul>${rows.map(it => has(it.title) && has(it.text)
     ? `<li><b>${esc(it.title.trim())}:</b> ${esc(it.text.trim())}</li>`
-    : `<li>${esc(it.text.trim())}</li>`).join("")}</ul>`;
+    : `<li>${esc((has(it.text) ? it.text : it.title).trim())}</li>`).join("")}</ul>`;
 }
 function photoRow(arr, cls, capKey){
   const ps = arr.filter(p => p.src);
@@ -1441,7 +1484,7 @@ function buildDoc(c){
   }
 
   // ג
-  const sys = c.systems.map(s => ({s, list: liList(s.items), ph: photoRow(s.photos, "sym", "caption")})).filter(x => x.list || x.ph);
+  const sys = c.systems.map(s => ({s, list: liList(s.items, true), ph: photoRow(s.photos, "sym", "caption")})).filter(x => x.list || x.ph);
   if (sys.length){
     h += sec("סימנים ותסמינים לפי מערכות");
     h += sys.map(x => `${has(x.s.name)?`<h3>${esc(x.s.name)}</h3>`:""}${x.list}${x.ph}`).join("");
@@ -1482,7 +1525,7 @@ function buildDoc(c){
       ${labGroups(labs).map(([d, rows]) => `${d ? `<div class="lab-when">בדיקות מתאריך ${esc(d)}</div>` : ""}<table class="labs${rows.some(r => parseRange(r.range)) ? "" : " norng"}"><thead><tr><th>בדיקה</th><th>תוצאה</th><th class="lrange">טווח</th><th class="viz">תצוגה</th><th class="lst">סטטוס</th></tr></thead><tbody>${rows.map(labRow).join("")}</tbody></table>`).join("")}`;
     h += lp;
   }
-  h += `<div class="copyright">כל הזכויות שמורות לגולן גבריאל פניכל</div>`;
+  h += `<div class="copyright"><span class="cr-c" aria-hidden="true">©</span> כל הזכויות שמורות ל<strong>גולן גבריאל פניכל</strong></div>`;
   return h;
 }
 
