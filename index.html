@@ -117,6 +117,18 @@ textarea{resize:vertical;min-height:44px;overflow:hidden}
 .lt{margin:0 0 8px;font-size:15px;color:var(--ink);font-weight:700}
 .sleep-total{display:flex;flex-wrap:wrap;align-items:baseline;gap:4px 8px;background:#e3e8f2;color:#2c3e63;border-radius:8px;padding:8px 12px;margin:10px 0;font-variant-numeric:tabular-nums}
 .sleep-total[hidden]{display:none}
+.sleep-total[hidden] + .grid2{margin-top:10px}
+.grid2.sleep-times{grid-template-columns:1fr 1fr}
+.sleep-q{display:grid;gap:4px;margin-top:10px}
+.sleep-q > span{font-size:13px;color:var(--muted)}
+.pills{display:flex;flex-wrap:wrap;gap:6px}
+.pill{border:1px solid var(--line);background:#fff;border-radius:999px;padding:5px 14px;min-height:36px;cursor:pointer;font-size:15px;font-variant-numeric:tabular-nums}
+.pill:hover{border-color:var(--green)}
+.pill[aria-pressed="true"]{background:var(--green);border-color:var(--green);color:#fff}
+.sleep-more{margin-top:10px}
+.doc .sleep-grid{display:grid;grid-template-columns:auto 1fr;gap:2px 14px;padding-right:6px}
+.doc .sleep-grid .lb{color:#777}
+.doc .sleep-grid .num{font-variant-numeric:tabular-nums}
 .sleep-total b{font-size:19px}
 .sleep-total small{font-size:13px}
 .sleep-total.warn{background:var(--amber-soft);color:var(--amber)}
@@ -574,7 +586,9 @@ const INFO = {
 })();
 const LIFE = [
   {key:"drinks",    title:"שתייה",          fields:[["water","מים"],["coffee","קפה ותה"],["other","משקאות אחרים"]]},
-  {key:"sleep",     title:"שינה",           fields:[["bed","שעת שינה","time"],["wake","שעת קימה","time"],["quality","איכות השינה"],["night","יקיצות בלילה"]]},
+  {key:"sleep",     title:"שינה",           fields:[["bed","ימי חול: שינה","time"],["wake","ימי חול: קימה","time"],["bed2","סוף שבוע: שינה","time"],["wake2","סוף שבוע: קימה","time"],
+                                               ["lat","זמן הירדמות","pick"],["fresh","קם רענן?","pick"],["wakes","יקיצות בלילה","pick"],["why","סיבת היקיצה","multi"],
+                                               ["notes","חלומות, נמנום, הערות"],["quality","איכות השינה","old"],["night","יקיצות בלילה (הערות)","old"]]},
   {key:"urine",     title:"שתן",            fields:[["freq","תדירות ביום"],["night","קימה בלילה לשתן"],["color","צבע וריח"],["notes","צריבה, דחיפות או הערות"]]},
   {key:"stool",     title:"צואה",           fields:[["freq","תדירות"],["bristol","צורה (סולם בריסטול 1-7)",null,"bristol"],["color","צבע"],["notes","גזים, כאב, ריר או דם"]]},
   {key:"relations", title:"יחסים אישיים",   fields:[["partner","בן/בת זוג"],["kids","ילדים"],["parents","הורים"]]}
@@ -837,14 +851,61 @@ function sleepMinutes(sl){
   return d;
 }
 const hoursMin = d => Math.floor(d/60) + (d % 60 ? ":" + String(d % 60).padStart(2,"0") : "");
+const sleepWeekend = sl => sleepMinutes(sl ? {bed: sl.bed2, wake: sl.wake2} : null);
+const sleepOdd = d => d != null && (d < 360 || d > 600);
+// the hours line under the times: weekdays first; the weekend is added when filled
 function sleepTotalHtml(sl){
-  const d = sleepMinutes(sl); if (d == null) return "";
-  return `<b>${hoursMin(d)}</b> שעות שינה${d < 360 ? " <small>· פחות מ-6 שעות</small>" : d > 600 ? " <small>· יותר מ-10 שעות</small>" : ""}`;
+  const d = sleepMinutes(sl), d2 = sleepWeekend(sl);
+  if (d == null && d2 == null) return "";
+  const warn = x => x < 360 ? " (פחות מ-6)" : x > 600 ? " (יותר מ-10)" : "";
+  if (d == null) return `<b>${hoursMin(d2)}</b> שעות שינה <small>בסוף שבוע${warn(d2)}</small>`;
+  return `<b>${hoursMin(d)}</b> שעות שינה${d < 360 ? " <small>· פחות מ-6 שעות</small>" : d > 600 ? " <small>· יותר מ-10 שעות</small>" : ""}${d2 != null ? ` <small>· סוף שבוע: ${hoursMin(d2)} שעות${warn(d2)}</small>` : ""}`;
 }
 function updateSleepTotal(){
   const el = document.getElementById("sleepTotal"); if (!el || !cur || !cur.life) return;
-  const d = sleepMinutes(cur.life.sleep);
-  el.hidden = d == null; el.className = "sleep-total" + (d != null && (d < 360 || d > 600) ? " warn" : ""); el.innerHTML = sleepTotalHtml(cur.life.sleep);
+  const sl = cur.life.sleep, d = sleepMinutes(sl), d2 = sleepWeekend(sl);
+  el.hidden = d == null && d2 == null; el.className = "sleep-total" + (sleepOdd(d) || (d == null && sleepOdd(d2)) ? " warn" : ""); el.innerHTML = sleepTotalHtml(sl);
+}
+// tap-to-pick answers in the sleep section; "multi" keeps several, joined by ", "
+const SLEEP_PICKS = {
+  lat:   ["מיד","עד חצי שעה","עד שעה","יותר משעה"],
+  fresh: ["כן","חלקית","לא"],
+  wakes: ["אין","1","2","3 או יותר"],
+  why:   ["שתן","מחשבות","כאב","חום/הזעה","רעש/ילדים","לא ידוע"]
+};
+const pickList = v => String(v || "").split(",").map(x => x.trim()).filter(Boolean);
+function pills(path, key, multi){
+  const on = pickList(getPath(cur, path));
+  return `<div class="pills" role="group">${SLEEP_PICKS[key].map(v => `<button type="button" class="pill" data-act="pill" data-path="${path}"${multi ? " data-multi" : ""} data-v="${esc(v)}" aria-pressed="${on.includes(v)}">${esc(v)}</button>`).join("")}</div>`;
+}
+// PDF: a small two-column table, e.g. "ימי חול | 23:00 עד 06:30 (7:30 שעות)"
+function sleepDoc(sl){
+  const row = (l, v) => v ? `<span class="lb">${esc(l)}</span><span>${v}</span>` : "";
+  const span = (b, w) => { const d = sleepMinutes({bed: b, wake: w}); return d != null ? `<span class="num">${esc(b.trim())} עד ${esc(w.trim())}</span> (${hoursMin(d)} שעות)` : [b, w].filter(has).map(x => esc(x.trim())).join(" / "); };
+  const pair = (b, w, lb, lw) => has(b) && has(w) ? span(b, w) : has(b) ? `${lb} ${esc(b.trim())}` : has(w) ? `${lw} ${esc(w.trim())}` : "";
+  const wk = pickList(sl.wakes)[0], why = pickList(sl.why);
+  const wakesTxt = wk ? (wk === "אין" ? "אין" : `${esc(wk)}${why.length ? " · " + why.map(esc).join(", ") : ""}`) : (why.length ? why.map(esc).join(", ") : "");
+  return `<div class="sleep-grid">`
+    + row("ימי חול", pair(sl.bed, sl.wake, "שינה", "קימה"))
+    + row("סוף שבוע", pair(sl.bed2, sl.wake2, "שינה", "קימה"))
+    + row("הירדמות", has(sl.lat) ? esc(sl.lat) : "")
+    + row("קם רענן", has(sl.fresh) ? esc(sl.fresh) : "")
+    + row("יקיצות", wakesTxt)
+    + row("איכות השינה", has(sl.quality) ? esc(sl.quality.trim()) : "")
+    + row("יקיצות (הערות)", has(sl.night) ? esc(sl.night.trim()) : "")
+    + row("הערות", has(sl.notes) ? esc(sl.notes.trim()) : "")
+    + `</div>`;
+}
+function sleepBlock(c){
+  const sl = c.life.sleep, P = k => `life.sleep.${k}`, F = Object.fromEntries(LIFE.find(g => g.key === "sleep").fields.map(f => [f[0], f[1]]));
+  const t = (k, kind, start) => combo(P(k), F[k], kind, start);
+  const q = (k, multi) => `<div class="sleep-q"><span>${esc(F[k])}</span>${pills(P(k), k, multi)}</div>`;
+  const d = sleepMinutes(sl), d2 = sleepWeekend(sl);
+  const old = ["quality","night"].filter(k => has(sl[k]));
+  return `<div class="grid2 sleep-times">${t("bed","bedtime","23:00")}${t("wake","time","06:30")}${t("bed2","bedtime","00:00")}${t("wake2","time","08:00")}</div>`
+    + `<div class="sleep-total${sleepOdd(d) || (d == null && sleepOdd(d2)) ? " warn" : ""}" id="sleepTotal"${d == null && d2 == null ? " hidden" : ""}>${sleepTotalHtml(sl)}</div>`
+    + q("lat") + q("fresh") + q("wakes") + q("why", true)
+    + `<div class="grid2 sleep-more">${area(P("notes"), "", F.notes)}${old.map(k => area(P(k), "", F[k])).join("")}</div>`;
 }
 function combo(path, label, kind, start){
   const v = getPath(cur, path) || "";
@@ -927,14 +988,8 @@ function renderEdit(){
       ${c.diet.map((d,i)=>`<div class="meal-row"><div class="meal-top">${combo(`diet.${i}.meal`,"","meal")}${combo(`diet.${i}.time`,"","time")}${tools(`diet.${i}`)}</div>${area(`diet.${i}.text`,"מה אוכלים")}</div>`).join("")}
       <div class="adders"><button type="button" class="btn primary" data-act="add-meal">+ הוספת ארוחה</button></div></div>
     ${LIFE.map(g=>{
-      const fld = ([k,label,kind,info]) => kind === "time"
-        ? combo(`life.${g.key}.${k}`, label, k === "bed" ? "bedtime" : "time", k === "bed" ? "23:00" : "06:30")
-        : area(`life.${g.key}.${k}`, "", label, info);
-      const times = g.fields.filter(f => f[2] === "time"), rest = g.fields.filter(f => f[2] !== "time");
-      // sleep: the two times, then the hours they add up to, then the other fields
-      const body = times.length
-        ? `<div class="grid2">${times.map(fld).join("")}</div><div class="${"sleep-total" + ((d => d != null && (d < 360 || d > 600))(sleepMinutes(c.life[g.key])) ? " warn" : "")}" id="sleepTotal"${sleepMinutes(c.life[g.key]) == null ? " hidden" : ""}>${sleepTotalHtml(c.life[g.key])}</div><div class="grid2">${rest.map(fld).join("")}</div>`
-        : `<div class="grid2">${g.fields.map(fld).join("")}</div>`;
+      const body = g.key === "sleep" ? sleepBlock(c)
+        : `<div class="grid2">${g.fields.map(([k,label,kind,info]) => area(`life.${g.key}.${k}`, "", label, info)).join("")}</div>`;
       return `<div class="lsub"><h3 class="lt">${esc(g.title)}</h3>${body}</div>${g.key === "drinks" ? actsBlock(c) : ""}`;
     }).join("")}
     ${c.life.extra.length ? `<div class="lsub"><h3 class="lt">נושאים נוספים</h3>${c.life.extra.map((it,i)=>`<div class="item">${inp(`life.extra.${i}.title`,"נושא")}${area(`life.extra.${i}.text`,"פירוט")}${tools(`life.extra.${i}`)}</div>`).join("")}</div>` : ""}
@@ -998,6 +1053,13 @@ $("#edit").addEventListener("click", e => {
   const b = e.target.closest("[data-act]");
   if (!b) return;
   const act = b.dataset.act, p = b.dataset.path;
+  if (act === "pill"){
+    const v = b.dataset.v, multi = b.hasAttribute("data-multi"), on = pickList(getPath(cur, p));
+    const next = multi ? (on.includes(v) ? on.filter(x => x !== v) : on.concat(v)) : (on.includes(v) ? [] : [v]);
+    setPath(cur, p, next.join(", ")); touch();
+    b.parentNode.querySelectorAll(".pill").forEach(x => x.setAttribute("aria-pressed", next.includes(x.dataset.v)));
+    return;
+  }
   const c = cur;
   switch(act){
     case "up": case "down": {
@@ -1558,11 +1620,9 @@ function buildDoc(c){
     if (diet.length) h += `<h3>ארוחות</h3><table>${diet.map(d=>`<tr><td class="meal">${esc(d.meal)}${has(d.time)?`<small>${esc(d.time)}</small>`:""}</td><td class="pre">${esc(d.text.trim())}</td></tr>`).join("")}</table>`;
     // drinks, then activities and hobbies, then the rest
     const groupHtml = ({g, rows}) => {
-      const L = c.life[g.key], d = g.key === "sleep" ? sleepMinutes(L) : null;
-      // sleep: bedtime and wake time print as one line with the hours, e.g. "00:30 עד 07:15 (6:45 שעות)"
-      const shown = d != null ? rows.filter(([k]) => k !== "bed" && k !== "wake") : rows;
-      const first = d != null ? `<li><b>שעות שינה:</b> ${esc(L.bed.trim())} עד ${esc(L.wake.trim())} (${hoursMin(d)} שעות)</li>` : "";
-      return `<h3>${esc(g.title)}</h3><ul>${first}${shown.map(([k,label]) => `<li><b>${esc(label)}:</b> ${esc(L[k].trim())}</li>`).join("")}</ul>`;
+      const L = c.life[g.key];
+      if (g.key === "sleep") return `<h3>${esc(g.title)}</h3>${sleepDoc(L)}`;
+      return `<h3>${esc(g.title)}</h3><ul>${rows.map(([k,label]) => `<li><b>${esc(label)}:</b> ${esc(L[k].trim())}</li>`).join("")}</ul>`;
     };
     h += groups.filter(x => x.g.key === "drinks").map(groupHtml).join("") + actsHtml + groups.filter(x => x.g.key !== "drinks").map(groupHtml).join("");
     h += extra.map(it => `${has(it.title)?`<h3>${esc(it.title.trim())}</h3>`:""}<ul><li>${esc(it.text.trim())}</li></ul>`).join("");
