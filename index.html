@@ -1383,7 +1383,7 @@ const cleanVal = c => c.replace(/^[*HLhlנג]\s+/, "").replace(/\s*[*HLhlנג]$/
 const fixRange = t => t.replace(/\s+/g, "").replace(/^[<>](\d+(?:[.,]\d+)?[-–])/, "$1").replace(/[–—]/g, "–").replace(/^(\d+(?:[.,]\d+)?)-(\d)/, "$1–$2");
 function labFromCells(cells, strict){
   // right-to-left PDFs give "200>" for "<200" (the sign is drawn mirrored after the number)
-  cells = cells.map(c => c.replace(/\[[.*\s]*\]/g, "").replace(/^[\]\[]+|[\]\[]+$/g, "").replace(/\s+/g, " ").trim())
+  cells = cells.map(c => c.replace(BIDI_RE, "").replace(/\[[.*\s]*\]/g, "").replace(/^[\]\[]+|[\]\[]+$/g, "").replace(/\s+/g, " ").trim())
     .filter(c => c && !/^\d{1,2}\/\d{1,2}\/\d{2,4}$/.test(c))
     .map(c => c.replace(/^[HL*]\s+(?=\S*[\/%a-z])/, ""))
     .map(c => { const m = c.match(/^(\d+(?:[.,]\d+)?)\s*([<>])$/); return m ? (m[2] === ">" ? "<" : ">") + m[1] : c; })
@@ -1525,9 +1525,11 @@ const STD_RANGES = [
   [["ferritin","פריטין"], /ng\/ml|[uµ]g\/l/, "10-291", "22-322"],
   [["hemoglobina1c%","hemoglobina1c","hba1c","a1c"], /%/, "<5.7"],
 ];
-const labKey = n => String(n || "").toLowerCase().replace(/[\s.\-_()]/g, "");
+// invisible direction marks (text copied or read from Hebrew apps and PDFs, often on iPhone) are dropped too
+const BIDI_RE = /[\u200b-\u200f\u202a-\u202e\u2066-\u2069\ufeff]/g;
+const labKey = n => String(n || "").replace(BIDI_RE, "").toLowerCase().replace(/[\s.\-_()]/g, "");
 function stdRange(r, sex){
-  const k = labKey(r.name), u = String(r.unit || "").toLowerCase().replace(/\s/g, "");
+  const k = labKey(r.name), u = String(r.unit || "").replace(BIDI_RE, "").toLowerCase().replace(/\s/g, "").replace(/\u03bc/g, "µ");
   if (!u) return "";
   const e = STD_RANGES.find(([names, unit]) => names.includes(k) && unit.test(u));
   return e ? (/גבר/.test(sex || "") && e[3] ? e[3] : e[2]) : "";
@@ -1756,7 +1758,9 @@ function buildDoc(c){
 
   // ז
   // rows without a date print last (same order as in the editor)
-  const labs = c.labs.rows.filter(r => has(r.name) || has(r.value)).map((r,i) => [r,i]).sort((a,b) => (has(a[0].date) ? 0 : 1) - (has(b[0].date) ? 0 : 1) || a[1] - b[1]).map(x => x[0]);
+  const labs = c.labs.rows.filter(r => has(r.name) || has(r.value)).map((r,i) => [r,i]).sort((a,b) => (has(a[0].date) ? 0 : 1) - (has(b[0].date) ? 0 : 1) || a[1] - b[1]).map(x => x[0])
+    // a result saved without a range (older cases, typed by hand) gets the usual range, so its scale is drawn
+    .map(r => has(r.range) ? r : Object.assign({}, r, {range: stdRange(r, c.general && c.general.sex)}));
   const lp = photoRow(c.labs.photos, "sym", "caption");
   if (labs.length || lp){
     h += sec("ז", "בדיקות מעבדה" + (has(c.labs.date) && !labs.some(r => has(r.date)) ? ` (${c.labs.date.trim()})` : ""));
