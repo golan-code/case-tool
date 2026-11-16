@@ -115,6 +115,11 @@ textarea{resize:vertical;min-height:44px;overflow:hidden}
 .lsub{border-top:1px solid var(--line);margin-top:14px;padding-top:12px}
 .lsub.first{border-top:0;margin-top:0;padding-top:0}
 .lt{margin:0 0 8px;font-size:15px;color:var(--ink);font-weight:700}
+.sleep-total{display:flex;flex-wrap:wrap;align-items:baseline;gap:4px 8px;background:#e3e8f2;color:#2c3e63;border-radius:8px;padding:8px 12px;margin:10px 0;font-variant-numeric:tabular-nums}
+.sleep-total[hidden]{display:none}
+.sleep-total b{font-size:19px}
+.sleep-total small{font-size:13px}
+.sleep-total.warn{background:var(--amber-soft);color:var(--amber)}
 .hint{font-size:13px;color:var(--muted);font-weight:400}
 .elems-ed{display:grid;gap:8px}
 .el-row{display:flex;align-items:center;gap:12px}
@@ -810,6 +815,37 @@ const COMBO = {
   pct:    {values: Array.from({length:21}, (_,i)=> String(i*5)), start:"25"},
   time:   {values: Array.from({length:96}, (_,i)=> String(Math.floor(i/4)).padStart(2,"0") + ":" + String(i%4*15).padStart(2,"0")), start:"08:00"}
 };
+// bedtime: the same 24 hours, ordered from the evening through the night (18:00 … 23:45, 00:00 … 17:45)
+COMBO.bedtime = {values: COMBO.time.values.slice(72).concat(COMBO.time.values.slice(0,72)), start:"23:00"};
+const isTimeKind = k => k === "time" || k === "bedtime";
+// a typed time such as "130", "0130", "1:30" or "23:10" becomes HH:MM (null when it is not a real time)
+function normTime(s){
+  let d = String(s).replace(/[^0-9]/g, "");
+  if (!d) return null;
+  if (d.length <= 2) d = d + "00";
+  if (d.length === 3) d = "0" + d;
+  if (d.length !== 4) return null;
+  const h = +d.slice(0,2), m = +d.slice(2);
+  return h < 24 && m < 60 ? d.slice(0,2) + ":" + d.slice(2) : null;
+}
+// hours of sleep between bedtime and wake time, across midnight; null unless both are full times
+function sleepMinutes(sl){
+  const t = v => { const m = /^(\d{2}):(\d{2})$/.exec(String(v || "").trim()); return m ? (+m[1]) * 60 + (+m[2]) : null; };
+  const b = t(sl && sl.bed), w = t(sl && sl.wake);
+  if (b == null || w == null) return null;
+  let d = w - b; if (d <= 0) d += 1440;
+  return d;
+}
+const hoursMin = d => Math.floor(d/60) + (d % 60 ? ":" + String(d % 60).padStart(2,"0") : "");
+function sleepTotalHtml(sl){
+  const d = sleepMinutes(sl); if (d == null) return "";
+  return `<b>${hoursMin(d)}</b> שעות שינה${d < 360 ? " <small>· פחות מ-6 שעות</small>" : d > 600 ? " <small>· יותר מ-10 שעות</small>" : ""}`;
+}
+function updateSleepTotal(){
+  const el = document.getElementById("sleepTotal"); if (!el || !cur || !cur.life) return;
+  const d = sleepMinutes(cur.life.sleep);
+  el.hidden = d == null; el.className = "sleep-total" + (d != null && (d < 360 || d > 600) ? " warn" : ""); el.innerHTML = sleepTotalHtml(cur.life.sleep);
+}
 function combo(path, label, kind, start){
   const v = getPath(cur, path) || "";
   return `<label class="fld" for="f-${path}">${label ? `<span>${esc(label)}</span>` : ""}<div class="combo"><input type="text" inputmode="${COMBO[kind].text ? "text" : "decimal"}" autocomplete="off" id="f-${path}" data-path="${path}" data-combo="${kind}" ${start ? `data-start="${start}"` : ""} ${label ? "" : (ph => `aria-label="${ph}" placeholder="${ph}"`)(kind === "meal" ? "ארוחה" : kind === "pct" ? "0" : "שעה")} value="${esc(v)}" role="combobox" aria-expanded="false" aria-autocomplete="list"><ul class="combo-list" role="listbox" hidden></ul></div></label>`;
@@ -890,9 +926,17 @@ function renderEdit(){
       ${c.diet.length ? "" : `<div class="note" style="margin-top:0">לחצו על "+ הוספת ארוחה" ובחרו ארוחה מהרשימה.</div>`}
       ${c.diet.map((d,i)=>`<div class="meal-row"><div class="meal-top">${combo(`diet.${i}.meal`,"","meal")}${combo(`diet.${i}.time`,"","time")}${tools(`diet.${i}`)}</div>${area(`diet.${i}.text`,"מה אוכלים")}</div>`).join("")}
       <div class="adders"><button type="button" class="btn primary" data-act="add-meal">+ הוספת ארוחה</button></div></div>
-    ${LIFE.map(g=>`<div class="lsub"><h3 class="lt">${esc(g.title)}</h3><div class="grid2">${g.fields.map(([k,label,kind,info])=> kind === "time"
-        ? combo(`life.${g.key}.${k}`, label, "time", k === "bed" ? "23:00" : "06:30")
-        : area(`life.${g.key}.${k}`, "", label, info)).join("")}</div></div>${g.key === "drinks" ? actsBlock(c) : ""}`).join("")}
+    ${LIFE.map(g=>{
+      const fld = ([k,label,kind,info]) => kind === "time"
+        ? combo(`life.${g.key}.${k}`, label, k === "bed" ? "bedtime" : "time", k === "bed" ? "23:00" : "06:30")
+        : area(`life.${g.key}.${k}`, "", label, info);
+      const times = g.fields.filter(f => f[2] === "time"), rest = g.fields.filter(f => f[2] !== "time");
+      // sleep: the two times, then the hours they add up to, then the other fields
+      const body = times.length
+        ? `<div class="grid2">${times.map(fld).join("")}</div><div class="${"sleep-total" + ((d => d != null && (d < 360 || d > 600))(sleepMinutes(c.life[g.key])) ? " warn" : "")}" id="sleepTotal"${sleepMinutes(c.life[g.key]) == null ? " hidden" : ""}>${sleepTotalHtml(c.life[g.key])}</div><div class="grid2">${rest.map(fld).join("")}</div>`
+        : `<div class="grid2">${g.fields.map(fld).join("")}</div>`;
+      return `<div class="lsub"><h3 class="lt">${esc(g.title)}</h3>${body}</div>${g.key === "drinks" ? actsBlock(c) : ""}`;
+    }).join("")}
     ${c.life.extra.length ? `<div class="lsub"><h3 class="lt">נושאים נוספים</h3>${c.life.extra.map((it,i)=>`<div class="item">${inp(`life.extra.${i}.title`,"נושא")}${area(`life.extra.${i}.text`,"פירוט")}${tools(`life.extra.${i}`)}</div>`).join("")}</div>` : ""}
     <div class="adders" style="margin-top:12px"><button type="button" class="btn small" data-act="add-life">+ הוספת נושא</button></div></section>`;
 
@@ -1003,7 +1047,7 @@ function comboMatches(kind, typed){
   }
   let d = digits(typed);
   // times: "7" or "730" mean 07:00 / 07:30
-  if (kind === "time" && d.length % 2 === 1 && !/^[0-2]\d/.test(d.length > 1 ? d : "")) d = "0" + d;
+  if (isTimeKind(kind) && d.length % 2 === 1 && !/^[0-2]\d/.test(d.length > 1 ? d : "")) d = "0" + d;
   return d ? vals.filter(v => digits(v).startsWith(d)) : vals;
 }
 function comboOpen(inp){
@@ -1024,6 +1068,7 @@ function comboPick(inp, v){
   inp.value = v; setPath(cur, inp.dataset.path, v); touch(); comboClose(inp);
   if (inp.dataset.combo === "pct") $("#elLive").innerHTML = elLive(cur.general);
   if (inp.dataset.combo === "meal") resortMeals();
+  if (/^life\.sleep\./.test(inp.dataset.path)) updateSleepTotal();
 }
 // after a meal is renamed, move it to its place in the day (only redraws when the order really changed)
 function resortMeals(){
@@ -1035,14 +1080,18 @@ $("#edit").addEventListener("focusout", e => {
   const t = e.target; if (!t.dataset || !t.dataset.combo) return;
   // leaving the field completes a partial entry, e.g. "165" in height becomes "1.65"
   const v = t.value.trim();
-  if (v && !COMBO[t.dataset.combo].text && !COMBO[t.dataset.combo].values.includes(v)){ const m = comboMatches(t.dataset.combo, v); if (m.length) comboPick(t, m[0]); }
+  if (v && !COMBO[t.dataset.combo].text && !COMBO[t.dataset.combo].values.includes(v)){
+    const n = isTimeKind(t.dataset.combo) ? normTime(v) : null;   // an exact time the user typed, e.g. 23:10
+    if (n) comboPick(t, n);
+    else { const m = comboMatches(t.dataset.combo, v); if (m.length) comboPick(t, m[0]); }
+  }
   setTimeout(()=>comboClose(t), 150);
   if (t.dataset.combo === "meal") setTimeout(resortMeals, 160);
 });
 $("#edit").addEventListener("click", e => {
   const li = e.target.closest(".combo-list li"); if (li) comboPick(li.closest(".combo").querySelector("input"), li.dataset.v);
 });
-$("#edit").addEventListener("input", e => { const t = e.target; if (t.dataset && t.dataset.combo){ t.dataset.fresh = "0"; comboOpen(t); } });
+$("#edit").addEventListener("input", e => { const t = e.target; if (t.dataset && t.dataset.combo){ t.dataset.fresh = "0"; comboOpen(t); if (/^life\.sleep\./.test(t.dataset.path || "")) updateSleepTotal(); } });
 $("#edit").addEventListener("mousedown", e => {
   const li = e.target.closest(".combo-list li"); if (!li) return;
   e.preventDefault(); comboPick(li.closest(".combo").querySelector("input"), li.dataset.v);
@@ -1050,7 +1099,11 @@ $("#edit").addEventListener("mousedown", e => {
 $("#edit").addEventListener("keydown", e => {
   const t = e.target; if (!t.dataset || !t.dataset.combo) return;
   const list = t.parentNode.querySelector(".combo-list");
-  if (list.hidden){ if (e.key === "ArrowDown"){ t.dataset.fresh = "1"; comboOpen(t); e.preventDefault(); } return; }
+  if (list.hidden){
+    if (e.key === "Enter" && isTimeKind(t.dataset.combo)){ const n = normTime(t.value); if (n){ e.preventDefault(); comboPick(t, n); } return; }
+    if (e.key === "ArrowDown"){ t.dataset.fresh = "1"; comboOpen(t); e.preventDefault(); }
+    return;
+  }
   const items = [...list.children], i = items.findIndex(li => li.classList.contains("on"));
   if (e.key === "ArrowDown" || e.key === "ArrowUp"){
     e.preventDefault();
@@ -1504,7 +1557,13 @@ function buildDoc(c){
     h += sec("דפוסי חיים");
     if (diet.length) h += `<h3>ארוחות</h3><table>${diet.map(d=>`<tr><td class="meal">${esc(d.meal)}${has(d.time)?`<small>${esc(d.time)}</small>`:""}</td><td class="pre">${esc(d.text.trim())}</td></tr>`).join("")}</table>`;
     // drinks, then activities and hobbies, then the rest
-    const groupHtml = ({g, rows}) => `<h3>${esc(g.title)}</h3><ul>${rows.map(([k,label]) => `<li><b>${esc(label)}:</b> ${esc(c.life[g.key][k].trim())}</li>`).join("")}</ul>`;
+    const groupHtml = ({g, rows}) => {
+      const L = c.life[g.key], d = g.key === "sleep" ? sleepMinutes(L) : null;
+      // sleep: bedtime and wake time print as one line with the hours, e.g. "00:30 עד 07:15 (6:45 שעות)"
+      const shown = d != null ? rows.filter(([k]) => k !== "bed" && k !== "wake") : rows;
+      const first = d != null ? `<li><b>שעות שינה:</b> ${esc(L.bed.trim())} עד ${esc(L.wake.trim())} (${hoursMin(d)} שעות)</li>` : "";
+      return `<h3>${esc(g.title)}</h3><ul>${first}${shown.map(([k,label]) => `<li><b>${esc(label)}:</b> ${esc(L[k].trim())}</li>`).join("")}</ul>`;
+    };
     h += groups.filter(x => x.g.key === "drinks").map(groupHtml).join("") + actsHtml + groups.filter(x => x.g.key !== "drinks").map(groupHtml).join("");
     h += extra.map(it => `${has(it.title)?`<h3>${esc(it.title.trim())}</h3>`:""}<ul><li>${esc(it.text.trim())}</li></ul>`).join("");
   }
