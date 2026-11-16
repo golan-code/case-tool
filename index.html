@@ -1490,6 +1490,41 @@ function addNoteRanges(found, lines){
     if (r && !r.range) r.range = (/קטן|נמוך/.test(m[1]) ? "<" : ">") + m[2];
   }
 }
+/* some reports (Clalit online printouts) draw the normal range as a picture, so no range text reaches us.
+   For common blood counts we fill the usual adult range (the values Clalit prints), only when the unit matches. */
+const STD_RANGES = [
+  // [names, unit pattern, range for women, range for men (if different)]
+  [["wbc"], /k\/[uµ]l|10\^?9\/l|10\^?3/, "4.5-11"],
+  [["rbc"], /m\/[uµ]l|10\^?12\/l|10\^?6/, "4-5.2", "4.5-5.9"],
+  [["hb","hgb","hemoglobin","המוגלובין"], /g\/dl/, "12-16", "13.5-17.5"],
+  [["hct","hematocrit","המטוקריט"], /%/, "36-46", "41-53"],
+  [["mcv"], /fl/, "80-100"],
+  [["mch"], /pg/, "26-34"],
+  [["mchc"], /g\/dl/, "30-36.7"],
+  [["rdw"], /%/, "11-16"],
+  [["plt","platelets","טסיות"], /k\/[uµ]l|10\^?9\/l|10\^?3/, "150-450"],
+  [["mpv"], /fl/, "4-13"],
+  [["neutabs","neut#","neutrophilsabs"], /k\/[uµ]l|10\^?9\/l|10\^?3/, "1.8-7.7"],
+  [["lymabs","lymphabs","lympabs","lym#"], /k\/[uµ]l|10\^?9\/l|10\^?3/, "1-4.8"],
+  [["monoabs","mono#"], /k\/[uµ]l|10\^?9\/l|10\^?3/, "0-0.8"],
+  [["eosabs","eos#"], /k\/[uµ]l|10\^?9\/l|10\^?3/, "0-0.5"],
+  [["basoabs","baso#"], /k\/[uµ]l|10\^?9\/l|10\^?3/, "0-0.2"],
+  [["lucabs","luc#"], /k\/[uµ]l|10\^?9\/l|10\^?3/, "0-0.4"],
+  [["luc%"], /%/, "0-4.5"],
+];
+const labKey = n => String(n || "").toLowerCase().replace(/[\s.\-_()]/g, "");
+function stdRange(r, sex){
+  const k = labKey(r.name), u = String(r.unit || "").toLowerCase().replace(/\s/g, "");
+  if (!u) return "";
+  const e = STD_RANGES.find(([names, unit]) => names.includes(k) && unit.test(u));
+  return e ? (/גבר/.test(sex || "") && e[3] ? e[3] : e[2]) : "";
+}
+// fills empty ranges in place; returns how many were filled
+function fillStdRanges(rows, sex){
+  let n = 0;
+  for (const r of rows) if (!has(r.range)){ const s = stdRange(r, sex); if (s){ r.range = s; n++; } }
+  return n;
+}
 // the date that appears most often is the test date (a birth date shows up once)
 function findDate(text){
   const n = {};
@@ -1525,11 +1560,19 @@ function addLabs(found, dateText){
   const key = r => (r.name + "|" + r.value + "|" + (r.date || "")).toLowerCase();
   const seen = new Set(cur.labs.rows.map(key));
   let n = 0;
-  for (const r of found){ if (d) r.date = d; const k = key(r); if (seen.has(k)) continue; seen.add(k); cur.labs.rows.push(r); n++; }
+  const filled = fillStdRanges(found, cur.general && cur.general.sex);
+  let fixed = 0;
+  for (const r of found){
+    if (d) r.date = d; const k = key(r);
+    // the same result loaded again: only add a range it was missing
+    if (seen.has(k)){ const old = cur.labs.rows.find(x => key(x) === k); if (old && !has(old.range) && has(r.range)){ old.range = r.range; fixed++; } continue; }
+    seen.add(k); cur.labs.rows.push(r); n++;
+  }
   sortLabs();
   touch(); renderEdit();
   const m2 = $("#labMsg"); m2.hidden = false; m2.classList.remove("warn");
-  m2.textContent = n === 1 ? "נוספה בדיקה אחת. כדאי לעבור עליה ולתקן אם משהו נקרא לא נכון." : `נוספו ${n} בדיקות. כדאי לעבור עליהן ולתקן אם משהו נקרא לא נכון.`;
+  m2.textContent = (n === 1 ? "נוספה בדיקה אחת. כדאי לעבור עליה ולתקן אם משהו נקרא לא נכון." : n ? `נוספו ${n} בדיקות. כדאי לעבור עליהן ולתקן אם משהו נקרא לא נכון.` : fixed ? `עודכנו טווחי תקין ל-${fixed} בדיקות שכבר היו בתיק.` : "כל הבדיקות מהקובץ כבר נמצאות בתיק.")
+    + (filled ? " טווחי התקין לא הופיעו בקובץ כטקסט, אז מילאתי את הטווחים המקובלים לספירת דם. כדאי לוודא שהם תואמים לדו״ח." : "");
   m2.scrollIntoView({block:"start"});
 }
 $("#edit").addEventListener("change", async e => {
